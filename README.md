@@ -11,13 +11,19 @@ and land on the right **order of magnitude**.
 1. **Pick a question** — random or from the library.
 2. **Fill in your own assumption** for each multiply/divide factor. Your
    estimate updates live as you type.
-3. **Reveal the expert breakdown** — your guess and the expert's are plotted
-   on a logarithmic ruler (10⁰ → 10¹²), and you're scored on how close you got
-   *in order of magnitude*.
-4. **Go deeper** — each question lists the follow-ups an interviewer would
+3. **Commit to a 90% confidence range** — a low and high bound you're 90% sure
+   the answer falls between. Point estimates test your math; ranges test whether
+   you actually know how sure you are.
+4. **Reveal the expert breakdown** — your guess and range are plotted on a
+   logarithmic ruler (10⁰ → 10¹²). You're scored two ways: how close your point
+   estimate is *in order of magnitude*, and whether the truth landed inside your
+   range.
+5. **Go deeper** — each question lists the follow-ups an interviewer would
    ask and the reasoning concepts you just practiced.
-5. **Track yourself** — completed questions, self-ratings, and the categories
-   worth revisiting are saved locally and shown on the Progress page.
+6. **Track yourself** — the Progress page shows completed questions, self-ratings,
+   and two calibration signals built over time: your **hit rate** (are you
+   right ~90% of the time, or quietly overconfident?) and your **directional
+   bias** (do your estimates systematically run high or low?).
 
 ## Run it locally
 
