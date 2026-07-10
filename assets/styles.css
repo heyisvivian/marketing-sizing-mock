@@ -227,6 +227,43 @@ h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; line-hei
 .marker.you .tag { top: -34px; color: var(--accent-ink); }
 .marker.exp .tag { top: 22px; color: var(--reference); }
 
+/* confidence band on the ruler */
+.ruler-band {
+  position: absolute;
+  top: 50%;
+  height: 22px;
+  transform: translateY(-50%);
+  background: rgba(255, 77, 28, 0.14);
+  border: 1px solid rgba(255, 77, 28, 0.4);
+  border-radius: 3px;
+  z-index: 1;
+}
+
+/* confidence range inputs */
+.range-row { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; }
+.range-field { display: flex; flex-direction: column; gap: 6px; }
+.range-field span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+.range-field input {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  width: 150px;
+  padding: 9px 12px;
+  text-align: right;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--surface-sunk);
+  color: var(--text);
+}
+.range-field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); background: var(--surface); }
+.range-sep { font-family: var(--font-mono); font-size: 13px; color: var(--text-faint); padding-bottom: 11px; }
+.range-row .unit { font-family: var(--font-mono); font-size: 13px; color: var(--text-faint); padding-bottom: 11px; }
+
 .btn-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .btn {
   font-family: var(--font-display);

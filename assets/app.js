@@ -61,7 +61,7 @@
   }
 
   /* ---------- shared: the magnitude ruler ---------- */
-  function rulerHTML(caption, you, expert) {
+  function rulerHTML(caption, you, expert, range) {
     var ticks = [
       [0, "1", "10⁰"], [3, "thousand", "10³"], [6, "million", "10⁶"],
       [9, "billion", "10⁹"], [12, "trillion", "10¹²"],
@@ -70,6 +70,12 @@
       return '<div class="tick" style="left:' + left + '%"><b>' + t[2] + "</b><span>" + t[1] + "</span></div>";
     }).join("");
 
+    var band = "";
+    if (range && range.low > 0 && range.high > 0) {
+      var a = pos(range.low), b = pos(range.high);
+      band = '<div class="ruler-band" style="left:' + Math.min(a, b) + "%;width:" + Math.abs(b - a) + '%"></div>';
+    }
+
     var markers = "";
     if (you != null) markers += '<div class="marker you" style="left:' + pos(you) + '%"><div class="tag">you · ' + esc(human(you)) + '</div><div class="dot"></div></div>';
     if (expert != null) markers += '<div class="marker exp" style="left:' + pos(expert) + '%"><div class="dot"></div><div class="tag">expert · ' + esc(human(expert)) + '</div></div>';
@@ -77,7 +83,7 @@
     return (
       '<div class="ruler">' +
       '<div class="ruler-caption">' + esc(caption) + "</div>" +
-      '<div class="ruler-track">' + ticks + markers + "</div>" +
+      '<div class="ruler-track">' + band + ticks + markers + "</div>" +
       "</div>"
     );
   }
@@ -90,8 +96,8 @@
     var howSteps = [
       ["01", "Read the question", "No formula given — just a deliberately fuzzy real-world quantity."],
       ["02", "Break it into factors", "Fill in your own assumption for each multiply/divide step."],
-      ["03", "Land an estimate", "The app computes your number live as you type."],
-      ["04", "Check the magnitude", "Plot your guess against the expert's on the log ruler — close in order of magnitude wins."],
+      ["03", "Commit to a range", "Give a point estimate and a 90% confidence band — how sure are you, really?"],
+      ["04", "Check yourself", "Plot your guess and range against the expert's on the log ruler. Over time, see if you're calibrated — or quietly overconfident."],
     ].map(function (s) {
       return '<div class="step-card"><div class="n">' + s[0] + '</div><h3>' + esc(s[1]) + "</h3><p>" + esc(s[2]) + "</p></div>";
     }).join("");
@@ -147,6 +153,7 @@
     if (!q) { location.hash = "#/library"; return; }
     var saved = load()[id] || {};
     var userVals = []; // per-step numeric input
+    var userRange = { low: undefined, high: undefined };
 
     app.innerHTML =
       '<button class="btn ghost small" data-go="library" style="margin-bottom:24px">← Library</button>' +
@@ -163,6 +170,18 @@
       '<p class="sub">Enter your own assumption for each factor. The estimate updates as you type — don\'t peek yet.</p>' +
       '<div id="factors"></div>' +
       '<div class="running"><span class="lab">Your estimate</span><span class="val" id="running">—</span></div>' +
+      "</div>" +
+
+      // confidence interval
+      '<div class="panel">' +
+      "<h2>Your 90% confidence range</h2>" +
+      '<p class="sub">State a low and high bound you\'re 90% sure the true answer falls between. Over many questions, you should be right about 9 times in 10 — too many misses means overconfident, never missing means your ranges are too wide.</p>' +
+      '<div class="range-row">' +
+      '<label class="range-field"><span>Low</span><input type="number" inputmode="decimal" id="ci-low" placeholder="?"></label>' +
+      '<span class="range-sep">to</span>' +
+      '<label class="range-field"><span>High</span><input type="number" inputmode="decimal" id="ci-high" placeholder="?"></label>' +
+      '<span class="unit">' + esc(q.answer.unit) + "</span>" +
+      "</div>" +
       "</div>" +
 
       '<div class="reveal-row"><button class="btn primary" id="reveal">Reveal expert breakdown &amp; score me</button></div>' +
@@ -191,16 +210,26 @@
     }
     app.querySelector("#running").innerHTML = renderRunning();
 
+    // wire the confidence range inputs
+    var lowEl = app.querySelector("#ci-low"), highEl = app.querySelector("#ci-high");
+    if (saved.range) {
+      if (saved.range.low != null) { lowEl.value = saved.range.low; userRange.low = saved.range.low; }
+      if (saved.range.high != null) { highEl.value = saved.range.high; userRange.high = saved.range.high; }
+    }
+    lowEl.addEventListener("input", function () { userRange.low = lowEl.value === "" ? undefined : parseFloat(lowEl.value); });
+    highEl.addEventListener("input", function () { userRange.high = highEl.value === "" ? undefined : parseFloat(highEl.value); });
+
     app.querySelector("#reveal").addEventListener("click", function () {
-      revealResult(q, userVals);
+      revealResult(q, userVals, userRange);
     });
 
-    if (saved.revealed) revealResult(q, userVals); // re-show if returning
+    if (saved.revealed) revealResult(q, userVals, userRange); // re-show if returning
   }
 
-  function revealResult(q, userVals) {
+  function revealResult(q, userVals, userRange) {
     var you = computeFrom(q.steps, userVals);
     var expert = q.answer.value;
+    userRange = userRange || {};
 
     var verdict, vclass, vtext;
     if (you == null) { verdict = "Fill in the factors first"; vclass = "off"; vtext = "Enter your assumptions above, then reveal."; }
@@ -210,6 +239,27 @@
       else if (gap <= 1) { verdict = "Right order of magnitude"; vclass = "order"; vtext = "Within 10×. In an interview, this is a pass."; }
       else if (gap <= 2) { verdict = "Close-ish"; vclass = "off"; vtext = "Off by up to 100×. Check which factor pulled you away."; }
       else { verdict = "Off the mark"; vclass = "off"; vtext = "More than 100× off — revisit your assumptions one by one."; }
+    }
+
+    // calibration: did the expert value fall inside the user's 90% range?
+    var hasRange = userRange.low > 0 && userRange.high > 0;
+    var lo = hasRange ? Math.min(userRange.low, userRange.high) : null;
+    var hi = hasRange ? Math.max(userRange.low, userRange.high) : null;
+    var hit = hasRange ? (expert >= lo && expert <= hi) : null;
+    var widthOrders = hasRange ? (Math.log10(hi) - Math.log10(lo)) : null;
+    var calClass, calVerdict, calText;
+    if (!hasRange) {
+      calVerdict = "No range given";
+      calClass = "off";
+      calText = "Next time, commit to a low and high bound before revealing — calibration is half the skill.";
+    } else if (hit) {
+      calClass = "spot"; calVerdict = "Caught it";
+      calText = widthOrders <= 1
+        ? "The answer sat inside a tight range — well-calibrated and confident."
+        : "You caught the answer, but the range spans " + widthOrders.toFixed(1) + " orders of magnitude. See if you can tighten it next time.";
+    } else {
+      calClass = "off"; calVerdict = "Missed";
+      calText = "The answer fell outside your range — a sign of overconfidence. Widen your bounds until you'd expect to be right ~9 times in 10.";
     }
 
     var expRows = q.steps.map(function (s) {
@@ -226,12 +276,16 @@
     var tags = q.concepts.map(function (c) { return '<span class="t">' + esc(c) + "</span>"; }).join("");
 
     var html =
-      rulerHTML("Where you landed vs the expert estimate", you, expert) +
+      rulerHTML("Where you landed vs the expert estimate", you, expert, hasRange ? { low: lo, high: hi } : null) +
       '<div class="panel">' +
       '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px"><span class="verdict ' + vclass + '">' + esc(verdict) + '</span>' +
       (you != null ? '<span class="muted" style="font-family:var(--font-mono);font-size:13px">you ' + esc(human(you)) + " · expert " + esc(human(expert)) + "</span>" : "") +
       "</div>" +
       '<p class="note">' + esc(vtext) + "</p>" +
+      '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:18px 0 6px;padding-top:16px;border-top:1px solid var(--line)"><span class="verdict ' + calClass + '">' + esc(calVerdict) + '</span>' +
+      (hasRange ? '<span class="muted" style="font-family:var(--font-mono);font-size:13px">range ' + esc(human(lo)) + " – " + esc(human(hi)) + "</span>" : "") +
+      "</div>" +
+      '<p class="note">' + esc(calText) + "</p>" +
       "</div>" +
 
       '<div class="panel">' +
@@ -265,8 +319,12 @@
     var holder = app.querySelector("#result");
     holder.innerHTML = html;
 
-    // persist reveal + rating
-    record(q.id, { revealed: true, userVals: userVals.slice(), mag: you });
+    // persist reveal + rating + calibration
+    record(q.id, {
+      revealed: true, userVals: userVals.slice(), mag: you,
+      range: hasRange ? { low: lo, high: hi } : null,
+      hit: hit, ratioLog: (you != null) ? (Math.log10(you) - Math.log10(expert)) : null,
+    });
     var savedRating = (load()[q.id] || {}).rating;
     Array.prototype.forEach.call(holder.querySelectorAll(".rate"), function (b) {
       if (String(savedRating) === b.getAttribute("data-rate")) b.classList.add("sel");
@@ -314,6 +372,41 @@
       );
     }).join("");
 
+    // calibration: how often the truth fell inside the user's 90% range
+    var rangeIds = doneIds.filter(function (id) { return typeof p[id].hit === "boolean"; });
+    var hits = rangeIds.filter(function (id) { return p[id].hit; }).length;
+    var hitRate = rangeIds.length ? hits / rangeIds.length : null;
+    var calSummary = "";
+    if (rangeIds.length >= 1) {
+      var pctHit = Math.round(hitRate * 100);
+      var cverd, cnote;
+      if (rangeIds.length < 3) {
+        cverd = "Building a read"; cnote = "You've given ranges on " + rangeIds.length + " question" + (rangeIds.length === 1 ? "" : "s") + ". A few more and this becomes a real calibration signal (the target is being right ~90% of the time).";
+      } else if (hitRate < 0.8) {
+        cverd = "Overconfident"; cnote = "The answer landed inside your range only " + pctHit + "% of the time — you're aiming for ~90%. Widen your bounds; genuine uncertainty deserves room.";
+      } else if (hitRate > 0.97) {
+        cverd = "Ranges too wide"; cnote = "You caught the answer " + pctHit + "% of the time — safe, but so wide it says little. Tighten toward a real 90% interval.";
+      } else {
+        cverd = "Well calibrated"; cnote = "You caught the answer " + pctHit + "% of the time, right around the 90% target. This is exactly the instinct interviewers reward.";
+      }
+      calSummary =
+        '<div class="section-head"><h2>Calibration</h2></div>' +
+        '<div class="panel"><div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:6px">' +
+        '<span class="verdict ' + (hitRate >= 0.8 && hitRate <= 0.97 ? "spot" : "off") + '">' + esc(cverd) + '</span>' +
+        '<span class="muted" style="font-family:var(--font-mono);font-size:13px">' + hits + "/" + rangeIds.length + " inside range · target 90%</span>" +
+        "</div><p class=\"note\">" + esc(cnote) + "</p></div>";
+    }
+
+    // directional bias: do point estimates run high or low vs expert?
+    var ratios = doneIds.map(function (id) { return p[id].ratioLog; }).filter(function (r) { return typeof r === "number" && isFinite(r); });
+    var biasNote = "";
+    if (ratios.length >= 3) {
+      var meanLog = ratios.reduce(function (a, b) { return a + b; }, 0) / ratios.length;
+      var factor = Math.pow(10, Math.abs(meanLog));
+      if (Math.abs(meanLog) < 0.15) biasNote = "Your estimates show no systematic high/low bias — nicely centered.";
+      else biasNote = "You tend to " + (meanLog > 0 ? "over" : "under") + "-estimate by about " + (factor >= 10 ? Math.round(factor) : factor.toFixed(1)) + "× on average. Worth noticing which assumptions pull you that way.";
+    }
+
     // questions to revisit (rated "struggled")
     var revisit = doneIds.filter(function (id) { return p[id].rating === 1; }).map(function (id) {
       var q = byId(id);
@@ -326,8 +419,10 @@
       '<div class="stat-grid">' +
       '<div class="stat"><div class="big"><span class="accent">' + done + "</span>/" + QUESTIONS.length + '</div><div class="lab">Questions completed</div></div>' +
       '<div class="stat"><div class="big">' + (avg ? avg.toFixed(1) : "—") + '</div><div class="lab">Avg self-rating (3 = nailed it)</div></div>' +
-      '<div class="stat"><div class="big">' + struggled + '</div><div class="lab">Marked to revisit</div></div>' +
+      '<div class="stat"><div class="big">' + (hitRate != null ? '<span class="accent">' + Math.round(hitRate * 100) + "</span>%" : "—") + '</div><div class="lab">Truth inside your range' + (rangeIds.length ? " (" + rangeIds.length + ")" : "") + "</div></div>" +
       "</div>" +
+      calSummary +
+      (biasNote ? '<div class="section-head"><h2>Directional bias</h2></div><div class="panel"><p class="note" style="margin:0">' + esc(biasNote) + "</p></div>" : "") +
       '<div class="section-head"><h2>Coverage by category</h2></div>' +
       '<div class="bars">' + bars + "</div>" +
       (revisit ? '<div class="section-head"><h2>Worth another pass</h2></div><div class="qlist">' + revisit + "</div>" : "") +
